@@ -89,7 +89,8 @@ type Storage interface {
 // only part that requires filecoin-ffi/CGO — lives outside this package. Curio
 // supplies an FFI-backed implementation (harmony/resources/ffigpu); consumers
 // that build without CGO supply their own (e.g. a GPU-less stub). Implementations
-// should fill Cpu, Ram and Gpu; MachineID is assigned by Register.
+// should fill Cpu, Ram and Gpu; RamPhysical and RamVirtual may be populated to
+// enable dual-dimensional memory scheduling. MachineID is assigned by Register.
 type ResourceInspector interface {
 	GetResources() (Resources, error)
 }
@@ -188,8 +189,8 @@ func (res *Reg) Shutdown() {
 	res.shutdown.Store(true)
 }
 
-// System gathers the FFI-free machine resources: CPU count (runtime.NumCPU) and
-// available RAM (go-sysinfo), plus a sanity check for co-located lotus/curio
+// System gathers the FFI-free machine resources: CPU count (runtime.NumCPU),
+// available physical RAM and free swap (go-sysinfo), plus a sanity check for co-located lotus/curio
 // processes. The GPU count is supplied by the caller (via an injected
 // ResourceInspector) since detecting GPUs requires filecoin-ffi/CGO, which this
 // package must not depend on. If HARMONY_OVERRIDE_GPUS is set it wins over the
