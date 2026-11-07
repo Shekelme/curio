@@ -610,22 +610,37 @@ func oldestFirstSeq(taskTypes map[string]*taskTypeHandler, ts taskSource, prefer
 
 var rlog = logging.Logger("harmony-res")
 
+// subtractMemory saturates at zero to avoid unsigned underflow.
+func subtractMemory(available, used uint64) uint64 {
+	if used >= available {
+		return 0
+	}
+	return available - used
+}
+
 // ResourcesAvailable determines what resources are still unassigned.
 func (e *TaskEngine) ResourcesAvailable() resources.Resources {
 	tmp := e.cfg.reg.Resources
+	if tmp.RamPhysical == 0 {
+		tmp.RamPhysical = tmp.Ram
+	}
+	if tmp.RamVirtual == 0 {
+		tmp.RamVirtual = tmp.Ram
+	}
 	for _, t := range e.handlers {
 		ct := t.Max.ActiveThis()
 		tmp.Cpu -= ct * t.Cost.Cpu
 		tmp.Gpu -= float64(ct) * t.Cost.Gpu
-		ramUsed := uint64(ct) * t.Cost.Ram
-		if ramUsed >= tmp.Ram {
-			tmp.Ram = 0
-		} else {
-			tmp.Ram -= ramUsed
-		}
-		rlog.Debugw("Per task type", "Name", t.Name, "Count", ct, "CPU", ct*t.Cost.Cpu, "RAM", uint64(ct)*t.Cost.Ram, "GPU", float64(ct)*t.Cost.Gpu)
+		minUsed := uint64(ct) * t.Cost.MinMemoryCost()
+		maxUsed := uint64(ct) * t.Cost.MaxMemoryCost()
+		tmp.RamPhysical = subtractMemory(tmp.RamPhysical, minUsed)
+		tmp.RamVirtual = subtractMemory(tmp.RamVirtual, maxUsed)
+		rlog.Debugw("Per task type", "Name", t.Name, "Count", ct, "CPU", ct*t.Cost.Cpu,
+			"RAMMin", minUsed, "RAMMax", maxUsed, "GPU", float64(ct)*t.Cost.Gpu)
 	}
-	rlog.Debugw("Total", "CPU", tmp.Cpu, "RAM", tmp.Ram, "GPU", tmp.Gpu)
+	// Keep Ram as the legacy view of remaining physical memory.
+	tmp.Ram = tmp.RamPhysical
+	rlog.Debugw("Total", "CPU", tmp.Cpu, "RAM", tmp.Ram, "RAMVirtual", tmp.RamVirtual, "GPU", tmp.Gpu)
 	return tmp
 }
 

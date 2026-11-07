@@ -24,9 +24,56 @@ var LOOKS_DEAD_TIMEOUT = 10 * time.Minute // Time w/o minute heartbeats
 type Resources struct {
 	Cpu       int
 	Gpu       float64
-	Ram       uint64
+
+	// Ram is the legacy single-dimensional memory capacity/cost. It remains
+	// supported for existing task definitions and callers.
+	Ram uint64
+
+	// RamPhysical and RamVirtual are available host capacity. RamVirtual is
+	// physical available memory plus currently free swap.
+	RamPhysical uint64
+	RamVirtual  uint64
+
+	// RamMin and RamMax are per-task reservations: minimum physical memory
+	// and maximum virtual memory (RAM + swap), respectively. If neither is
+	// set, Ram is used for both dimensions for backwards compatibility.
+	RamMin uint64
+	RamMax uint64
+
 	MachineID int
 	Storage
+}
+
+// MinMemoryCost returns the physical-memory reservation for one task.
+func (r Resources) MinMemoryCost() uint64 {
+	if r.RamMin != 0 || r.RamMax != 0 {
+		return r.RamMin
+	}
+	return r.Ram
+}
+
+// MaxMemoryCost returns the virtual-memory reservation for one task.
+func (r Resources) MaxMemoryCost() uint64 {
+	if r.RamMin != 0 || r.RamMax != 0 {
+		return r.RamMax
+	}
+	return r.Ram
+}
+
+// AvailablePhysicalMemory and AvailableVirtualMemory fall back to the legacy
+// Ram field so static registrations and older tests keep their old semantics.
+func (r Resources) AvailablePhysicalMemory() uint64 {
+	if r.RamPhysical != 0 {
+		return r.RamPhysical
+	}
+	return r.Ram
+}
+
+func (r Resources) AvailableVirtualMemory() uint64 {
+	if r.RamVirtual != 0 {
+		return r.RamVirtual
+	}
+	return r.Ram
 }
 
 // Optional Storage management.
@@ -178,9 +225,11 @@ func System(gpu float64) (res Resources, err error) {
 	}
 
 	res = Resources{
-		Cpu: runtime.NumCPU(),
-		Ram: mem.Available,
-		Gpu: gpu,
+		Cpu:         runtime.NumCPU(),
+		Ram:         mem.Available,
+		RamPhysical: mem.Available,
+		RamVirtual:  mem.Available + mem.VirtualFree,
+		Gpu:         gpu,
 	}
 
 	return res, nil

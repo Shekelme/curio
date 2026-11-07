@@ -38,10 +38,11 @@ func (e *TaskEngine) computePreemptionPlan(needed resources.Resources) *preempti
 	available := e.ResourcesAvailable()
 
 	cpuDeficit := needed.Cpu - available.Cpu
-	ramDeficit := int64(needed.Ram) - int64(available.Ram)
+	physicalDeficit := int64(needed.MinMemoryCost()) - int64(available.AvailablePhysicalMemory())
+	virtualDeficit := int64(needed.MaxMemoryCost()) - int64(available.AvailableVirtualMemory())
 	gpuDeficit := needed.Gpu - available.Gpu
 
-	if cpuDeficit <= 0 && ramDeficit <= 0 && gpuDeficit <= 0 {
+	if cpuDeficit <= 0 && physicalDeficit <= 0 && virtualDeficit <= 0 && gpuDeficit <= 0 {
 		return nil
 	}
 
@@ -70,17 +71,18 @@ func (e *TaskEngine) computePreemptionPlan(needed resources.Resources) *preempti
 
 	cutoff := 0
 	for i, c := range allCandidates {
-		if cpuDeficit <= 0 && ramDeficit <= 0 && gpuDeficit <= 0 {
+		if cpuDeficit <= 0 && physicalDeficit <= 0 && virtualDeficit <= 0 && gpuDeficit <= 0 {
 			break
 		}
 		cpuDeficit -= c.handler.Cost.Cpu
-		ramDeficit -= int64(c.handler.Cost.Ram)
+		physicalDeficit -= int64(c.handler.Cost.MinMemoryCost())
+		virtualDeficit -= int64(c.handler.Cost.MaxMemoryCost())
 		gpuDeficit -= c.handler.Cost.Gpu
 		cutoff = i + 1
 	}
 
 	// If we still have a deficit, we can't preempt enough tasks to run this. Stop here.
-	if cpuDeficit > 0 || ramDeficit > 0 || gpuDeficit > 0 {
+	if cpuDeficit > 0 || physicalDeficit > 0 || virtualDeficit > 0 || gpuDeficit > 0 {
 		return nil
 	}
 
@@ -94,11 +96,13 @@ func (e *TaskEngine) computePreemptionPlan(needed resources.Resources) *preempti
 		candidate := allCandidates[i]
 		c := candidate.handler.Cost
 		newCpu := cpuDeficit + c.Cpu
-		newRam := ramDeficit + int64(c.Ram)
+		newPhysical := physicalDeficit + int64(c.MinMemoryCost())
+		newVirtual := virtualDeficit + int64(c.MaxMemoryCost())
 		newGpu := gpuDeficit + c.Gpu
-		if newCpu <= 0 && newRam <= 0 && newGpu <= 0 {
+		if newCpu <= 0 && newPhysical <= 0 && newVirtual <= 0 && newGpu <= 0 {
 			cpuDeficit = newCpu
-			ramDeficit = newRam
+			physicalDeficit = newPhysical
+			virtualDeficit = newVirtual
 			gpuDeficit = newGpu
 		} else {
 			selected = append(selected, candidate)

@@ -555,13 +555,26 @@ func (h *taskTypeHandler) AssertMachineHasCapacity() (int, error) {
 			headroom = cpuHeadroom
 		}
 	}
-	if h.Cost.Ram > r.Ram {
-		return 0, xerrors.Errorf("Did not accept %s task: out of RAM: required %d available %d)", h.Name, h.Cost.Ram, r.Ram)
+	ramMin := h.Cost.MinMemoryCost()
+	ramMax := h.Cost.MaxMemoryCost()
+	physicalAvailable := r.AvailablePhysicalMemory()
+	virtualAvailable := r.AvailableVirtualMemory()
+	if ramMin > physicalAvailable {
+		return 0, xerrors.Errorf("Did not accept %s task: insufficient physical RAM: required %d available %d", h.Name, ramMin, physicalAvailable)
 	}
-	if h.Cost.Ram > 0 {
-		ramHeadroom := r.Ram / h.Cost.Ram
+	if ramMax > virtualAvailable {
+		return 0, xerrors.Errorf("Did not accept %s task: insufficient virtual memory (RAM + swap): required %d available %d", h.Name, ramMax, virtualAvailable)
+	}
+	if ramMin > 0 {
+		ramHeadroom := physicalAvailable / ramMin
 		if ramHeadroom < uint64(headroom) {
 			headroom = int(ramHeadroom)
+		}
+	}
+	if ramMax > 0 {
+		virtualHeadroom := virtualAvailable / ramMax
+		if virtualHeadroom < uint64(headroom) {
+			headroom = int(virtualHeadroom)
 		}
 	}
 	if r.Gpu-h.Cost.Gpu < 0 {
