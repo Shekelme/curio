@@ -111,3 +111,37 @@ func TestLegacyRamCostRemainsSingleDimensionCompatible(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, headroom)
 }
+
+func TestSDRReservationsAllowTwoTasksWithSwapHeadroom(t *testing.T) {
+	const gib = uint64(1 << 30)
+	const ramMin = 60 * gib
+	const ramMax = 64*gib + (256 << 20)
+
+	// Representative burstmine sizing: 125 GiB physical available and
+	// 252 GiB total virtual available (physical + free swap).
+	reg := &resources.Reg{Resources: resources.Resources{
+		Cpu:         32,
+		Ram:         125 * gib,
+		RamPhysical: 125 * gib,
+		RamVirtual:  252 * gib,
+	}}
+
+	max := taskhelp.Max(8)
+	h := &taskTypeHandler{
+		TaskTypeDetails: TaskTypeDetails{
+			Name: "SDR",
+			Max:  max,
+			Cost: resources.Resources{RamMin: ramMin, RamMax: ramMax},
+		},
+	}
+	e := &TaskEngine{cfg: taskEngineConfig{reg: reg}, handlers: []*taskTypeHandler{h}}
+	h.TaskEngine = e
+
+	headroom, err := h.AssertMachineHasCapacity()
+	require.NoError(t, err)
+	require.Equal(t, 2, headroom)
+
+	max.Add(2)
+	_, err = h.AssertMachineHasCapacity()
+	require.Error(t, err, "a third SDR must not fit")
+}
